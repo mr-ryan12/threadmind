@@ -1,9 +1,8 @@
 // Packages
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { getOpenAIClient, TITLE_MODEL } from "~/server/openai.server";
 
 // Utils
-import { logger } from "./logger";
+import { logger } from "~/server/utils/logger";
 
 // Cap the stored title. The sidebar CSS-truncates to one line, so this is just a
 // sanity bound on what we persist (an ill-behaved model could return a paragraph).
@@ -41,7 +40,7 @@ function sanitizeTitle(raw: string): string {
 }
 
 // Generate a short, human-readable conversation title from the first user
-// message. Uses a cheap, fast model (titling is trivial — not worth gpt-4) and
+// message. Uses Luna without reasoning for low-cost title generation and
 // always resolves: any failure or empty/garbled output falls back to a
 // deterministic truncation so a conversation is never left untitled.
 export async function generateConversationTitle(
@@ -49,20 +48,16 @@ export async function generateConversationTitle(
 ): Promise<string> {
   const fallback = truncateFallback(firstMessage);
   try {
-    const model = new ChatOpenAI({
-      modelName: "gpt-4o-mini",
-      temperature: 0,
-      maxTokens: 20,
+    const response = await getOpenAIClient().responses.create({
+      model: TITLE_MODEL,
+      reasoning: { effort: "none" },
+      instructions: TITLE_SYSTEM_PROMPT,
+      input: firstMessage,
+      max_output_tokens: 64,
+      store: false,
     });
-
-    const response = await model.invoke([
-      new SystemMessage(TITLE_SYSTEM_PROMPT),
-      new HumanMessage(firstMessage),
-    ]);
-
-    const raw =
-      typeof response.content === "string" ? response.content : "";
-    const title = sanitizeTitle(raw);
+    if (response.status !== "completed") return fallback;
+    const title = sanitizeTitle(response.output_text);
     return title || fallback;
   } catch (error) {
     logger.logError(error);

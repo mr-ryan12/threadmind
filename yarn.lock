@@ -6357,7 +6357,7 @@ onetime@^5.1.0, onetime@^5.1.2:
   dependencies:
     mimic-fn "^2.1.0"
 
-openai@^4.28.0, openai@^4.41.1:
+openai@^4.41.1:
   version "4.97.0"
   resolved "https://registry.npmjs.org/openai/-/openai-4.97.0.tgz"
   integrity sha512-LRoiy0zvEf819ZUEJhgfV8PfsE8G5WpQi4AwA1uCV8SKvvtXQkoWUFkepD6plqyJQRghy2+AEPQ07FrJFKHZ9Q==
@@ -6382,6 +6382,11 @@ openai@^4.77.0:
     form-data-encoder "1.7.2"
     formdata-node "^4.3.2"
     node-fetch "^2.6.7"
+
+openai@^7.43.0:
+  version "7.43.0"
+  resolved "https://registry.yarnpkg.com/openai/-/openai-7.43.0.tgz#4cbc59539fb49b339ad0c04a0ed91ce7fe5617f2"
+  integrity sha512-fBjKaDFG8AVfkGYoIo/E+xNRlNk7nx2nQ9GoQtXfePzPjg4QcT6nejkhXayJnEwSpFGfthOrAPI2KXj5yAqg9A==
 
 openapi-types@^12.1.3:
   version "12.1.3"

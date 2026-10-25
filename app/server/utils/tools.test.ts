@@ -1,121 +1,33 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { runTool, tools } from "./tools";
 
-// Mock the external HTTP client and logger (testing.md — no real network / no noise).
-vi.mock("./axios", () => ({
-  axiosInstance: { get: vi.fn() },
-}));
+afterEach(() => vi.useRealTimers());
 
-vi.mock("./logger", () => ({
-  logger: { logError: vi.fn(), logRequest: vi.fn() },
-}));
-
-import { toolImplementations } from "./tools";
-import { axiosInstance } from "./axios";
-
-const get = axiosInstance.get as unknown as ReturnType<typeof vi.fn>;
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  process.env.SERPAPI_KEY = "test-key";
-});
-
-// search_web used to return only the first matching section, so a tangential
-// knowledge-graph entity would be handed back alone while the organic results that
-// actually answer the question were dropped. It now returns a labeled digest of
-// the answer box, top organic results, and knowledge graph so the model can judge.
-describe("search_web result extraction", () => {
-  it("surfaces the answer_box direct answer under a Featured answer label", async () => {
-    get.mockResolvedValue({
-      data: {
-        answer_box: { answer: "Mount Everest" },
-        organic_results: [{ snippet: "A list of mountains around the world." }],
-      },
-    });
-    const result = await toolImplementations.search_web({
-      query: "tallest mountain",
-    });
-    expect(result).toContain("Featured answer: Mount Everest");
+describe("Responses tools", () => {
+  it("exposes hosted search and a strict timezone function", () => {
+    expect(tools).toContainEqual({ type: "web_search" });
+    expect(tools).toContainEqual(expect.objectContaining({
+      type: "function",
+      name: "get_time_in_timezone",
+      strict: true,
+      parameters: expect.objectContaining({ additionalProperties: false }),
+    }));
   });
 
-  it("uses the answer_box snippet when there is no direct answer", async () => {
-    get.mockResolvedValue({
-      data: {
-        answer_box: {
-          snippet: "Mount Everest is Earth's highest mountain above sea level.",
-        },
-      },
-    });
-    const result = await toolImplementations.search_web({ query: "everest" });
-    expect(result).toContain(
-      "Featured answer: Mount Everest is Earth's highest mountain above sea level."
-    );
+  it("returns the current local time in the requested zone", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-25T03:30:00Z"));
+    expect(runTool("get_time_in_timezone", { timezone: "America/Denver" }))
+      .toBe("10/24/2026, 9:30:00 PM");
   });
 
-  it("includes the knowledge graph entity (title + type + description)", async () => {
-    get.mockResolvedValue({
-      data: {
-        knowledge_graph: {
-          title: "Mount Everest",
-          type: "Mountain",
-          description: "Mount Everest is Earth's highest mountain above sea level.",
-        },
-      },
-    });
-    const result = await toolImplementations.search_web({
-      query: "tallest mountain",
-    });
-    expect(result).toContain(
-      "Knowledge graph: Mount Everest — Mountain — Mount Everest is Earth's highest mountain above sea level."
-    );
-  });
+  it.each([null, {}, { timezone: 1 }, { timezone: "" }, { timezone: "not/a/zone" }])(
+    "returns a recoverable error for invalid arguments: %j", (args) => {
+      expect(runTool("get_time_in_timezone", args)).toMatch(/^Error:/);
+    },
+  );
 
-  it("keeps the organic results even when a tangential knowledge graph is present", async () => {
-    // Mirrors the real failure: Google resolved the query to an unrelated company
-    // entity, but the organic results still carry the real answer. Both must survive.
-    get.mockResolvedValue({
-      data: {
-        knowledge_graph: { title: "Current", type: "Financial company" },
-        organic_results: [
-          { snippet: "The office is held by the current head of state." },
-          { snippet: "Elections determine who holds the office." },
-        ],
-      },
-    });
-    const result = await toolImplementations.search_web({ query: "who holds office" });
-    expect(result).toContain("Top results:");
-    expect(result).toContain("current head of state");
-    expect(result).toContain("Knowledge graph: Current — Financial company");
-  });
-
-  it("caps organic snippets at the top five", async () => {
-    get.mockResolvedValue({
-      data: {
-        organic_results: [
-          { snippet: "One." },
-          { snippet: "Two." },
-          { snippet: "Three." },
-          { snippet: "Four." },
-          { snippet: "Five." },
-          { snippet: "Six (dropped)." },
-        ],
-      },
-    });
-    const result = await toolImplementations.search_web({ query: "x" });
-    expect(result).toContain("Five.");
-    expect(result).not.toContain("Six");
-  });
-
-  it("returns a no-results message when SerpAPI has nothing usable", async () => {
-    get.mockResolvedValue({ data: {} });
-    expect(await toolImplementations.search_web({ query: "x" })).toBe(
-      "No relevant search results found."
-    );
-  });
-
-  it("returns a friendly message when the request throws", async () => {
-    get.mockRejectedValue(new Error("network down"));
-    expect(await toolImplementations.search_web({ query: "x" })).toBe(
-      "Unable to search the web at this time."
-    );
+  it("rejects unknown functions", () => {
+    expect(() => runTool("unknown", {})).toThrow("Unknown tool");
   });
 });

@@ -66,3 +66,25 @@ export function wantsFullDocument(message: string): boolean {
   const normalized = message.toLowerCase();
   return FULL_DOCUMENT_PATTERNS.some((pattern) => pattern.test(normalized));
 }
+
+// Mentioning uploads doesn't exclude external sources. Remove the search tool
+// only for an explicit source restriction or browsing prohibition.
+export function forbidsWebSearch(message: string): boolean {
+  const normalized = message.toLowerCase().replace(/’/g, "'").replace(/\s+/g, " ");
+  const noWebPatterns = [
+    /\b(?:do not|don't|never) (?:search|browse|use|consult|access) (?:the )?(?:web|internet|online sources?)\b/,
+    /\b(?:no|without) (?:web|internet|online) (?:search(?:es)?|browsing|sources?)\b/,
+  ];
+  if (noWebPatterns.some((pattern) => pattern.test(normalized))) return true;
+
+  // "Not only my documents" requests additional sources. It is not a
+  // document-only restriction, but any separate no-web instruction above wins.
+  const sourceRestriction = normalized.replace(
+    /\b(?:not|don't|do not|never) (?:use )?(?:only|exclusively|solely)\b/g,
+    "",
+  );
+  return [
+    /\b(?:only|exclusively|solely) (?:(?:use|using|from|on) )?(?:(?:my|the|these|uploaded|provided) )*(?:docs?|documents?|uploads?|files?|attachments?)\b/,
+    /\b(?:docs?|documents?|uploads?|files?|attachments?)[- ](?:only|exclusively)\b/,
+  ].some((pattern) => pattern.test(sourceRestriction));
+}

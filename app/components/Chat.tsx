@@ -7,6 +7,7 @@ import {
   useNavigate,
   useFetcher,
 } from "@remix-run/react";
+import MessageContent from "~/components/MessageContent";
 
 interface Message {
   role: "user" | "assistant";
@@ -353,7 +354,9 @@ export default function Chat({
                     {message.role === "user" ? "You" : "AI Assistant"}
                   </div>
                   <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
-                    {message.content}
+                    {message.role === "assistant" ? (
+                      <MessageContent content={message.content} />
+                    ) : message.content}
                   </div>
                 </div>
                 {message.role === "user" && (
@@ -402,7 +405,7 @@ export default function Chat({
                     AI Assistant
                   </div>
                   <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
-                    {streamingResponse}
+                    <MessageContent content={streamingResponse} />
                     <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" aria-hidden="true"></span>
                   </div>
                 </div>
