@@ -149,6 +149,17 @@
     @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:focus-visible:ring-blue-400;
   }
 
+  /* Code block header: sits above <pre>, outside it, so code text is unchanged. */
+  .message-markdown .code-block-header {
+    @apply flex items-center justify-between gap-2 min-h-11 pl-3 pr-1 md:min-h-9;
+    @apply bg-gray-800 text-gray-300 text-xs font-mono;
+    @apply border border-b-0 border-gray-700 rounded-t-lg;
+  }
+
+  .message-markdown .code-block-header + pre {
+    @apply rounded-t-none;
+  }
+
   .message-markdown pre code {
     @apply bg-transparent p-0 rounded-none text-inherit;
     font-size: inherit;

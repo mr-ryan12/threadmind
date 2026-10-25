@@ -2,7 +2,10 @@
 import ReactMarkdown from "react-markdown";
 
 // Utils
-import { escapeCitationLabels, rehypeStripStructuralWhitespace } from "~/utils/markdown";
+import { escapeCitationLabels, getCodeBlockInfo, rehypeStripStructuralWhitespace } from "~/utils/markdown";
+
+// Components
+import CodeBlock from "./CodeBlock";
 
 // Types
 import type { PropsWithChildren } from "react";
@@ -16,9 +19,6 @@ type TShiftedHeading = "h3" | "h4" | "h5" | "h6";
 
 const LINK_CLASS_NAME =
   "text-blue-600 dark:text-blue-300 underline break-words rounded focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-200";
-// Scrollable code blocks must be keyboard reachable. jsx-a11y flags a literal
-// tabIndex on <pre> (no role satisfies it), but allows expression values.
-const CODE_BLOCK_TAB_INDEX = 0;
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 // Only absolute http(s) and mailto URLs may become active links.
@@ -63,8 +63,9 @@ const components: Components = {
   img({ alt }): JSX.Element | null {
     return alt ? <span>{alt}</span> : null;
   },
-  pre({ children }): JSX.Element {
-    return <pre tabIndex={CODE_BLOCK_TAB_INDEX} role="region" aria-label="Code block">{children}</pre>;
+  pre({ node, children }): JSX.Element {
+    const { language, code } = getCodeBlockInfo(node);
+    return <CodeBlock language={language} code={code}>{children}</CodeBlock>;
   },
 };
 

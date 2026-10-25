@@ -308,3 +308,20 @@ describe("unfinished markdown", () => {
     }
   });
 });
+
+describe("code block header", () => {
+  it("renders the language label above a code body that is unchanged", () => {
+    const container = renderContent("```js\n  const a = 1;\n\nreturn a;\n```");
+    expect(screen.getByText("JavaScript")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    expect(container.querySelector("pre > code")?.textContent).toBe("  const a = 1;\n\nreturn a;\n");
+    expect(screen.getByText("JavaScript").closest("pre")).toBeNull();
+  });
+
+  it("omits the label for a fence without a tag", () => {
+    const container = renderContent("```\nplain\n```");
+    expect(screen.queryByText("JavaScript")).toBeNull();
+    expect(container.querySelector(".code-block-header span.truncate")).toBeEmptyDOMElement();
+    expect(container.querySelector("pre > code")?.textContent).toBe("plain\n");
+  });
+});
