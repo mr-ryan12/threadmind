@@ -4,6 +4,7 @@ import {
   wantsDocumentContext,
   referencesSpecificDocument,
   wantsFullDocument,
+  forbidsWebSearch,
 } from "./documentIntent";
 
 describe("wantsDocumentContext", () => {
@@ -35,6 +36,33 @@ describe("wantsDocumentContext", () => {
 
   it("is case-insensitive", () => {
     expect(wantsDocumentContext("SUMMARIZE THIS DOCUMENT")).toBe(true);
+  });
+});
+
+describe("forbidsWebSearch", () => {
+  it.each([
+    "Only use my documents",
+    "Use only my uploaded documents",
+    "Use my uploads only",
+    "Document-only answer please",
+    "Rely solely on the provided files",
+    "Don't search the web",
+    "Don’t browse the internet",
+    "Use my uploads without web search",
+    "Use not only my documents but also your knowledge. Do not search the web.",
+  ])("honors explicit source restrictions: %s", (message) => {
+    expect(forbidsWebSearch(message)).toBe(true);
+  });
+
+  it.each([
+    "Use my uploads",
+    "Use my uploads and search the web to compare them with current guidance.",
+    "Use not only my documents but also current web sources.",
+    "Don't use only my documents; consult current web sources too.",
+    "USE NOT ONLY MY DOCUMENTS BUT ALSO WEB SOURCES",
+    "Use not   only my documents but also current guidance.",
+  ])("permits mixed sources or non-exclusive document references: %s", (message) => {
+    expect(forbidsWebSearch(message)).toBe(false);
   });
 });
 
