@@ -15,7 +15,7 @@ interface MessageContentProps {
 type TShiftedHeading = "h3" | "h4" | "h5" | "h6";
 
 const LINK_CLASS_NAME =
-  "text-blue-600 dark:text-blue-400 underline break-words rounded focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-200";
+  "text-blue-600 dark:text-blue-300 underline break-words rounded focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-200";
 // Scrollable code blocks must be keyboard reachable. jsx-a11y flags a literal
 // tabIndex on <pre> (no role satisfies it), but allows expression values.
 const CODE_BLOCK_TAB_INDEX = 0;

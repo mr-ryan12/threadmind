@@ -7,6 +7,8 @@ import {
   useNavigate,
   useFetcher,
 } from "@remix-run/react";
+
+// Components
 import MessageContent from "~/components/MessageContent";
 
 interface Message {
@@ -349,11 +351,15 @@ export default function Chat({
                     </svg>
                   </div>
                 )}
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
                     {message.role === "user" ? "You" : "AI Assistant"}
                   </div>
-                  <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                  <div
+                    className={`text-sm md:text-base leading-relaxed ${
+                      message.role === "user" ? "whitespace-pre-wrap" : ""
+                    }`}
+                  >
                     {message.role === "assistant" ? (
                       <MessageContent content={message.content} />
                     ) : message.content}
@@ -400,11 +406,11 @@ export default function Chat({
                     />
                   </svg>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
                     AI Assistant
                   </div>
-                  <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                  <div className="text-sm md:text-base leading-relaxed">
                     <MessageContent content={streamingResponse} />
                     <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" aria-hidden="true"></span>
                   </div>

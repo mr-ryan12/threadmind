@@ -77,6 +77,84 @@
     @apply bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-2xl rounded-bl-md;
   }
 
+  /*
+   * Assistant Markdown (rendered by MessageContent). Flat selectors on purpose:
+   * no nesting plugin is configured. p/li keep pre-wrap so single newlines stay
+   * visible (matches the old plain-text bubble); ul/ol/blockquote reset it so
+   * nested lists don't inherit pre-wrap from an outer li. Headings are styled by
+   * RENDERED level (h1-h2 are owned by the page; see MessageContent shiftHeading).
+   */
+  .message-markdown {
+    @apply min-w-0 break-words;
+    overflow-wrap: anywhere;
+  }
+
+  .message-markdown > * + * {
+    @apply mt-3;
+  }
+
+  .message-markdown p,
+  .message-markdown li {
+    white-space: pre-wrap;
+  }
+
+  .message-markdown ul,
+  .message-markdown ol,
+  .message-markdown blockquote {
+    white-space: normal;
+  }
+
+  .message-markdown h3,
+  .message-markdown h4,
+  .message-markdown h5,
+  .message-markdown h6 {
+    @apply font-semibold leading-snug;
+  }
+
+  .message-markdown h3 {
+    @apply text-base md:text-lg;
+  }
+
+  .message-markdown h4 {
+    @apply text-base;
+  }
+
+  .message-markdown ul {
+    @apply list-disc pl-5;
+  }
+
+  .message-markdown ol {
+    @apply list-decimal pl-5;
+  }
+
+  .message-markdown li + li,
+  .message-markdown li > ul,
+  .message-markdown li > ol {
+    @apply mt-1;
+  }
+
+  .message-markdown blockquote {
+    @apply border-l-4 border-gray-300 dark:border-gray-500 pl-3;
+    @apply text-gray-700 dark:text-gray-300;
+  }
+
+  .message-markdown :not(pre) > code {
+    @apply font-mono text-[0.9em] px-1 py-0.5 rounded bg-gray-200 dark:bg-gray-800;
+  }
+
+  .message-markdown pre {
+    @apply font-mono text-xs md:text-sm p-3 rounded-lg max-w-full overflow-x-auto whitespace-pre;
+    @apply bg-gray-900 text-gray-100;
+    @apply border border-gray-700;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:focus-visible:ring-blue-400;
+  }
+
+  .message-markdown pre code {
+    @apply bg-transparent p-0 rounded-none text-inherit;
+    font-size: inherit;
+    overflow-wrap: normal;
+  }
+
   /* Mobile-specific utilities */
   @media (max-width: 768px) {
     .mobile-safe-area {
