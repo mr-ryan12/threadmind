@@ -2,7 +2,8 @@
 import ReactMarkdown from "react-markdown";
 
 // Utils
-import { escapeCitationLabels, getCodeBlockInfo, rehypeStripStructuralWhitespace } from "~/utils/markdown";
+import { getCodeBlockInfo } from "~/utils/codeBlock";
+import { escapeCitationLabels, rehypeStripStructuralWhitespace } from "~/utils/markdown";
 
 // Components
 import CodeBlock from "./CodeBlock";

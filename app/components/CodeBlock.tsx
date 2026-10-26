@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 // Utils
-import { getLanguageLabel } from "~/utils/markdown";
+import { getLanguageLabel } from "~/utils/codeBlock";
 
 // Types
 import type { ReactNode } from "react";
