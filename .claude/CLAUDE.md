@@ -81,3 +81,64 @@ NODE_ENV          # development | production
 ## Project constitution
 
 Engineering guardrails are defined in `.specify/memory/constitution.md`. Detailed rules are in `.claude/rules/`.
+
+## Planning Guidelines
+
+Create a comprehensive, repository-informed implementation plan for the feature described in:
+
+`path/to/file/issue-<issue-number>.md`
+
+Save the plan to:
+
+`path/to/file/plan.md`
+
+### Before planning
+
+1. Read the complete feature brief, including its problem statement, scope, acceptance criteria, validation notes, and relevant files.
+2. Inspect the relevant implementation, tests, package scripts, and project conventions. Read applicable `AGENTS.md` files and skills when present.
+3. Ground recommendations in the repository. Cite concrete file paths and, where useful, symbols or current behavior. Do not invent files, APIs, dependencies, or existing behavior. Mark anything you could not verify.
+4. Identify requirements, constraints, dependencies, risks, and decisions that affect implementation order or scope.
+
+Ask me clarifying questions only when an unresolved answer would materially change the plan or block a safe, coherent implementation. Ask concise, prioritized questions before finalizing the plan. For non-blocking uncertainty, state a clearly labeled assumption or present the options and their tradeoffs; do not silently decide product behavior.
+
+### Plan requirements
+
+Write a phased plan broken into tasks that are coherent, independently reviewable units of work. Make the sequence and task dependencies explicit. Keep tasks small enough to implement and review one at a time, but do not split work into arbitrary file-by-file steps.
+
+For each task, include:
+
+- **Goal and changes:** the intended outcome and the key implementation work.
+- **Likely files:** verified paths to modify or inspect, adding other paths only when repository discovery supports them.
+- **Dependencies:** prerequisite tasks or decisions, or “None.”
+- **Acceptance checks:** observable conditions that show the task is complete.
+- **Validation:** the relevant tests or commands for that task, including any focused checks available in the repo.
+
+Map every feature requirement and acceptance criterion to at least one task. Include a compact traceability section so a reviewer can confirm nothing was missed. Keep the plan within the feature brief’s proposed scope; call out scope changes or deferred work explicitly rather than adding them silently.
+
+Include a final validation section. The feature brief requests `yarn test`, `yarn typecheck`, `yarn lint`, and `yarn build`; account for all four in the plan. Also include these commands after each implementation task, as appropriate to the task’s changes:
+
+- `yarn test`
+- `yarn typecheck`
+- `yarn lint`
+
+If running the full set after every task would be redundant or impractical, explain that in the plan and specify the focused checks to run per task, while retaining the full validation set at the appropriate phase or completion point. Do not omit a requested check without explaining why.
+
+### Output structure
+
+Use this structure, adapting only when the feature genuinely calls for it:
+
+1. Purpose and scope
+2. Repository findings and current behavior
+3. Assumptions, open questions, and decisions
+4. Phased implementation plan with numbered tasks
+5. Requirement-to-task traceability
+6. Risks and deferred work
+7. Final validation
+
+Write for an engineer who will execute the tasks sequentially. Make decisions and dependencies easy to find, and avoid vague tasks such as “update the UI” or “add tests” without describing what behavior changes and how completion will be checked.
+
+### Execution boundaries
+
+Do not modify application code, tests, configuration, dependencies, or database state during this planning session. Only create or update the planning document at the path above. Do not stage, commit, or otherwise prepare code changes for commit.
+
+The implementation will be carried out by executing each task one at a time with the `fullstack-dev` agent. After each task, an independent, general-purpose AI agent will review the changes and report findings or state that they are okay to commit. I will perform all commits. Reflect these review and commit boundaries in the plan: agents must not commit, stage changes, or treat their work as approved until I review it.

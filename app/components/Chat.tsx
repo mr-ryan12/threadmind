@@ -7,6 +7,8 @@ import {
   useNavigate,
   useFetcher,
 } from "@remix-run/react";
+
+// Components
 import MessageContent from "~/components/MessageContent";
 
 interface Message {
@@ -111,6 +113,9 @@ export default function Chat({
       clearInterval(streamIntervalRef.current);
       streamIntervalRef.current = null;
     }
+    // Whatever reply was pending belongs to the previous conversation; mark it
+    // handled so the "Thinking..." bridge below can't stay stuck on an abandoned stream.
+    committedActionDataRef.current = actionData ?? null;
     if (initialConversationId) {
       setConversationId(initialConversationId);
       setStreamingResponse("");
@@ -226,6 +231,17 @@ export default function Chat({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingResponse, isSubmitting]);
+
+  // A reply has arrived but its first word hasn't rendered yet (the stream starts on
+  // the first interval tick). Keep "Thinking..." up across that gap so the message
+  // list doesn't shrink and then re-grow (a visible vertical jump). Cleared once the
+  // stream starts, the reply is committed/abandoned, or for mount-time/error/empty data.
+  const isAwaitingStream =
+    actionData !== mountActionDataRef.current &&
+    committedActionDataRef.current !== actionData &&
+    (actionData?.words?.length ?? 0) > 0 &&
+    !streamingResponse;
+  const showThinking = isSubmitting || isAwaitingStream;
 
   const handleFileIconClick = () => {
     fileInputRef.current?.click();
@@ -349,11 +365,15 @@ export default function Chat({
                     </svg>
                   </div>
                 )}
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
                     {message.role === "user" ? "You" : "AI Assistant"}
                   </div>
-                  <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                  <div
+                    className={`text-sm md:text-base leading-relaxed ${
+                      message.role === "user" ? "whitespace-pre-wrap" : ""
+                    }`}
+                  >
                     {message.role === "assistant" ? (
                       <MessageContent content={message.content} />
                     ) : message.content}
@@ -400,13 +420,12 @@ export default function Chat({
                     />
                   </svg>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
                     AI Assistant
                   </div>
-                  <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                  <div className="streaming-cursor text-sm md:text-base leading-relaxed">
                     <MessageContent content={streamingResponse} />
-                    <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" aria-hidden="true"></span>
                   </div>
                 </div>
               </div>
@@ -414,7 +433,7 @@ export default function Chat({
           </div>
         )}
 
-        {isSubmitting && !streamingResponse && (
+        {showThinking && !streamingResponse && (
           <div className="flex justify-start">
             <div className="message-assistant max-w-[85%] md:max-w-[80%] p-3 md:p-4 shadow-sm">
               <div className="flex items-start space-x-2 md:space-x-3">

@@ -9,6 +9,7 @@
 //      in route-scoped `actionData`.
 //   3. Single-append — one response must stream into exactly one assistant message.
 
+// Packages
 import { useState } from "react";
 import { randomUUID } from "node:crypto";
 import { createRemixStub } from "@remix-run/testing";
@@ -22,6 +23,7 @@ import {
 import "@testing-library/jest-dom/vitest";
 import { beforeAll, beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 
+// Components
 import Chat from "./Chat";
 
 const RESPONSE = "Hello world";
@@ -286,5 +288,313 @@ describe("Chat history revalidation", () => {
     await waitFor(() =>
       expect(screen.getByText("Welcome to ThreadMind")).toBeInTheDocument()
     );
+  });
+});
+
+describe("Chat markdown rendering", () => {
+  const RESPONSE_MD = "Based on the résumé, **strong candidate**.\n\n- one\n- two";
+  // The bold phrase closes within the first two words, so a <strong> exists long
+  // before the stream finishes.
+  const STREAM_MD = "**strong candidate** for the role.\n\n- one\n- two";
+  const CITATION = "[Source](https://example.com/a)";
+  const SEEDED_MD = `${RESPONSE_MD}\n\nSee ${CITATION}`;
+
+  // Mirrors app/utils/chat.ts, which splits the response on spaces only.
+  function markdownReply(message: string, response: string) {
+    return { message, response, words: response.split(" ") };
+  }
+
+  // The streaming wrapper carries the `streaming-cursor` class (the cursor itself is
+  // a CSS ::after). Present means streaming is in progress; absent means finished.
+  function queryStreaming(): Element | null {
+    return document.querySelector(".streaming-cursor");
+  }
+
+  function getAssistantBubble(): HTMLElement {
+    const bubble = document.querySelector<HTMLElement>(".message-assistant");
+    if (!bubble) throw new Error("assistant bubble not found");
+    return bubble;
+  }
+
+  function renderChatWithReply(response: string) {
+    const Stub = createRemixStub([
+      {
+        path: "/",
+        Component: () => <Chat />,
+        action: async ({ request }) => {
+          const form = await request.formData();
+          return markdownReply(String(form.get("message") ?? ""), response);
+        },
+      },
+    ]);
+    render(<Stub initialEntries={["/"]} />);
+  }
+
+  function expectRenderedHistory(): void {
+    const bubble = getAssistantBubble();
+    expect(bubble.querySelector("strong")).toHaveTextContent("strong candidate");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(bubble.textContent).not.toContain("**");
+    const link = screen.getByRole("link", { name: "Source" });
+    expect(link).toHaveAttribute("href", "https://example.com/a");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  }
+
+  it("renders Markdown once the streamed response completes", async () => {
+    renderChatWithReply(RESPONSE_MD);
+
+    typeAndSend("how is the candidate?");
+
+    // The streaming bubble is also an assistant bubble, so completion means the
+    // full text is present AND the cursor has gone.
+    await waitFor(() => {
+      expect(queryStreaming()).toBeNull();
+      expect(getAssistantBubble()).toHaveTextContent("two");
+    });
+
+    const bubble = getAssistantBubble();
+    expect(bubble.querySelector("strong")).toHaveTextContent("strong candidate");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(bubble.textContent).not.toContain("**");
+  });
+
+  it("renders bold while the response is still streaming", async () => {
+    renderChatWithReply(STREAM_MD);
+
+    typeAndSend("how is the candidate?");
+
+    // Streaming wrapper present and the tail of the response not yet shown, but the bold
+    // phrase is already a real <strong>.
+    await waitFor(() => {
+      expect(queryStreaming()).not.toBeNull();
+      expect(getAssistantBubble().querySelector("strong")).toHaveTextContent(
+        "strong candidate"
+      );
+    });
+    expect(getAssistantBubble()).not.toHaveTextContent("two");
+
+    // Streaming to completion ends in the same rendered result as the completed path.
+    await waitFor(() => {
+      expect(queryStreaming()).toBeNull();
+      expect(getAssistantBubble()).toHaveTextContent("two");
+    });
+    const bubble = getAssistantBubble();
+    expect(bubble.querySelector("strong")).toHaveTextContent("strong candidate");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(bubble.textContent).not.toContain("**");
+  });
+
+  it("draws the cursor via CSS, not as a separate element or text", async () => {
+    renderChatWithReply(STREAM_MD);
+
+    typeAndSend("how is the candidate?");
+
+    // jsdom cannot compute pseudo-element layout, so the inline ::after cursor
+    // itself is not verifiable here; assert only the DOM contract it relies on.
+    await waitFor(() => expect(queryStreaming()).not.toBeNull());
+    const wrapper = queryStreaming() as HTMLElement;
+    const markdown = wrapper.querySelector(".message-markdown");
+    expect(markdown).not.toBeNull();
+    expect(markdown?.nextElementSibling).toBeNull();
+    expect(wrapper.querySelector('[aria-hidden="true"], .animate-pulse')).toBeNull();
+    expect(wrapper.textContent).toBe(markdown?.textContent);
+    expect(wrapper.textContent).not.toMatch(/[|\u2588\u258C\u258D\u2502_]/);
+
+    await waitFor(() => expect(queryStreaming()).toBeNull());
+  });
+
+  it("renders Markdown and citation links in loader-seeded history", () => {
+    const Stub = createRemixStub([
+      {
+        path: "/conversation/:id",
+        Component: () => (
+          <Chat
+            conversationId="conv-1"
+            initialMessages={[
+              { role: "user", content: "question" },
+              { role: "assistant", content: SEEDED_MD },
+            ]}
+          />
+        ),
+      },
+    ]);
+    render(<Stub initialEntries={["/conversation/conv-1"]} />);
+
+    expectRenderedHistory();
+  });
+
+  it("renders Markdown and citation links in fetcher-loaded history", async () => {
+    const Stub = createRemixStub([
+      {
+        path: "/conversation/:id",
+        Component: () => <Chat conversationId="conv-1" />,
+      },
+      {
+        path: "/api/conversation/:id/messages",
+        loader: () => ({
+          messages: [
+            { role: "user", content: "question" },
+            { role: "assistant", content: SEEDED_MD },
+          ],
+        }),
+      },
+    ]);
+    render(<Stub initialEntries={["/conversation/conv-1"]} />);
+
+    await screen.findByRole("link", { name: "Source" });
+    expectRenderedHistory();
+  });
+
+  it("keeps a submitted user message as plain text", async () => {
+    const text = "**not bold** and <b>x</b> - item";
+    renderChatWithReply(RESPONSE_MD);
+
+    typeAndSend(text);
+
+    const content = screen.getByText(text);
+    expect(content.closest(".message-user")).not.toBeNull();
+    expect(content.textContent).toBe(text);
+    expect(content.querySelector("strong, b, ul, li")).toBeNull();
+
+    // Let the reply finish so nothing is left streaming after the assertions.
+    await waitFor(() => {
+      expect(queryStreaming()).toBeNull();
+      expect(getAssistantBubble()).toHaveTextContent("two");
+    });
+    expect(screen.getByText(text).querySelector("strong, b, ul, li")).toBeNull();
+  });
+
+  it("keeps a seeded multiline user message as plain text", () => {
+    const Stub = createRemixStub([
+      {
+        path: "/conversation/:id",
+        Component: () => (
+          <Chat
+            conversationId="conv-1"
+            initialMessages={[
+              { role: "user", content: "**not bold**\n- item" },
+              { role: "assistant", content: "ok" },
+            ]}
+          />
+        ),
+      },
+    ]);
+    render(<Stub initialEntries={["/conversation/conv-1"]} />);
+
+    // getByText normalizes whitespace; the raw textContent keeps the newline.
+    const content = screen.getByText("**not bold** - item");
+    expect(content.closest(".message-user")).not.toBeNull();
+    expect(content.textContent).toBe("**not bold**\n- item");
+    expect(content.querySelector("strong, b, ul, li")).toBeNull();
+  });
+
+  it("renders a fenced code block header and copy button once through Chat", () => {
+    const Stub = createRemixStub([
+      {
+        path: "/conversation/:id",
+        Component: () => (
+          <Chat
+            conversationId="conv-1"
+            initialMessages={[
+              {
+                role: "assistant",
+                content: "Try this:\n\n```ts\nconst a = 1;\n```",
+              },
+            ]}
+          />
+        ),
+      },
+    ]);
+    render(<Stub initialEntries={["/conversation/conv-1"]} />);
+
+    expect(screen.getAllByText("TypeScript")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(1);
+    expect(getAssistantBubble().querySelector("pre code")).toHaveTextContent(
+      "const a = 1;"
+    );
+  });
+});
+
+describe("Chat thinking bubble", () => {
+  const THINKING = "Thinking...";
+
+  function replyStub(action: () => unknown) {
+    return createRemixStub([
+      { path: "/", Component: () => <Chat />, action: action as () => never },
+    ]);
+  }
+
+  it("keeps the thinking bubble until the first streamed word renders (no empty gap)", async () => {
+    const Stub = replyStub(() => actionReply("q"));
+    render(<Stub initialEntries={["/"]} />);
+
+    // Approach: real timers + a MutationObserver. The observer callback runs after
+    // every DOM mutation batch (a microtask after each React commit), so it samples
+    // every committed state across the submitting -> reply -> first-word transition.
+    // A "gap" is any committed state with neither the thinking bubble nor streamed text.
+    let sawThinking = false;
+    let gaps = 0;
+    const sample = (): void => {
+      const thinking = screen.queryByText(THINKING) !== null;
+      const streaming = screen.queryByText(/^Hello/) !== null;
+      if (thinking) sawThinking = true;
+      if (sawThinking && !thinking && !streaming) gaps++;
+    };
+    const observer = new MutationObserver(sample);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    typeAndSend("q");
+    await waitFor(() => expect(screen.getByText(RESPONSE)).toBeInTheDocument());
+    observer.disconnect();
+
+    expect(sawThinking).toBe(true);
+    expect(gaps).toBe(0);
+  });
+
+  it("removes the thinking bubble once streaming completes", async () => {
+    const Stub = replyStub(() => actionReply("q"));
+    render(<Stub initialEntries={["/"]} />);
+    typeAndSend("q");
+    await waitFor(() => expect(screen.getByText(RESPONSE)).toBeInTheDocument());
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+  });
+
+  it("does not show a stuck thinking bubble on an error response", async () => {
+    const Stub = replyStub(() => ({ error: "Failed to process message" }));
+    render(<Stub initialEntries={["/"]} />);
+    typeAndSend("q");
+    await waitFor(() =>
+      expect(screen.getByText("Failed to process message")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+  });
+
+  it("does not show a stuck thinking bubble after a keyed remount (chat reset)", async () => {
+    function Harness() {
+      const [resetKey, setResetKey] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setResetKey((k) => k + 1)}>
+            reset-chat
+          </button>
+          <Chat key={resetKey} />
+        </>
+      );
+    }
+    const Stub = createRemixStub([
+      { path: "/", Component: Harness, action: () => actionReply("q") },
+    ]);
+    render(<Stub initialEntries={["/"]} />);
+    typeAndSend("q");
+    await waitFor(() => expect(screen.getByText(RESPONSE)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("reset-chat"));
+    await waitFor(() =>
+      expect(screen.queryByText(RESPONSE)).not.toBeInTheDocument()
+    );
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
   });
 });
