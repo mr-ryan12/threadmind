@@ -73,7 +73,10 @@ export default function CodeBlock({ language, code, children }: CodeBlockProps):
   }
 
   return (
-    <div className="code-block">
+    // `relative` is load-bearing: the sr-only live region below is position:absolute.
+    // Without a positioned ancestor inside the scrolling message list it resolves
+    // against the outer page layout and inflates the document's scrollable height.
+    <div className="code-block relative">
       <div className="code-block-header">
         <span className="truncate">{label}</span>
         <button type="button" onClick={handleCopy} aria-label="Copy code" className={BUTTON_CLASS_NAME}>

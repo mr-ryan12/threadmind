@@ -65,6 +65,20 @@ describe("CodeBlock header", () => {
   });
 });
 
+describe("CodeBlock layout containment", () => {
+  // jsdom does no layout, so this cannot prove the page height is correct. It only
+  // guards the structure the fix relies on: a positioned wrapper that contains the
+  // absolutely-positioned sr-only live region. Verify the real effect in a browser.
+  it("positions the wrapper and keeps the sr-only live region inside it", () => {
+    const container = renderBlock();
+    const wrapper = container.querySelector(".code-block");
+    const liveRegion = container.querySelector("[aria-live='polite']");
+    expect(wrapper).toHaveClass("relative");
+    expect(liveRegion).toHaveClass("sr-only");
+    expect(wrapper?.contains(liveRegion)).toBe(true);
+  });
+});
+
 describe("CodeBlock copy button", () => {
   it("is a focusable button of type button", () => {
     renderBlock();
