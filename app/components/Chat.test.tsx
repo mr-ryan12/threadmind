@@ -495,3 +495,86 @@ describe("Chat markdown rendering", () => {
     );
   });
 });
+
+describe("Chat thinking bubble", () => {
+  const THINKING = "Thinking...";
+
+  function replyStub(action: () => unknown) {
+    return createRemixStub([
+      { path: "/", Component: () => <Chat />, action: action as () => never },
+    ]);
+  }
+
+  it("keeps the thinking bubble until the first streamed word renders (no empty gap)", async () => {
+    const Stub = replyStub(() => actionReply("q"));
+    render(<Stub initialEntries={["/"]} />);
+
+    // Approach: real timers + a MutationObserver. The observer callback runs after
+    // every DOM mutation batch (a microtask after each React commit), so it samples
+    // every committed state across the submitting -> reply -> first-word transition.
+    // A "gap" is any committed state with neither the thinking bubble nor streamed text.
+    let sawThinking = false;
+    let gaps = 0;
+    const sample = (): void => {
+      const thinking = screen.queryByText(THINKING) !== null;
+      const streaming = screen.queryByText(/^Hello/) !== null;
+      if (thinking) sawThinking = true;
+      if (sawThinking && !thinking && !streaming) gaps++;
+    };
+    const observer = new MutationObserver(sample);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    typeAndSend("q");
+    await waitFor(() => expect(screen.getByText(RESPONSE)).toBeInTheDocument());
+    observer.disconnect();
+
+    expect(sawThinking).toBe(true);
+    expect(gaps).toBe(0);
+  });
+
+  it("removes the thinking bubble once streaming completes", async () => {
+    const Stub = replyStub(() => actionReply("q"));
+    render(<Stub initialEntries={["/"]} />);
+    typeAndSend("q");
+    await waitFor(() => expect(screen.getByText(RESPONSE)).toBeInTheDocument());
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+  });
+
+  it("does not show a stuck thinking bubble on an error response", async () => {
+    const Stub = replyStub(() => ({ error: "Failed to process message" }));
+    render(<Stub initialEntries={["/"]} />);
+    typeAndSend("q");
+    await waitFor(() =>
+      expect(screen.getByText("Failed to process message")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+  });
+
+  it("does not show a stuck thinking bubble after a keyed remount (chat reset)", async () => {
+    function Harness() {
+      const [resetKey, setResetKey] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setResetKey((k) => k + 1)}>
+            reset-chat
+          </button>
+          <Chat key={resetKey} />
+        </>
+      );
+    }
+    const Stub = createRemixStub([
+      { path: "/", Component: Harness, action: () => actionReply("q") },
+    ]);
+    render(<Stub initialEntries={["/"]} />);
+    typeAndSend("q");
+    await waitFor(() => expect(screen.getByText(RESPONSE)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("reset-chat"));
+    await waitFor(() =>
+      expect(screen.queryByText(RESPONSE)).not.toBeInTheDocument()
+    );
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.queryByText(THINKING)).not.toBeInTheDocument();
+  });
+});
