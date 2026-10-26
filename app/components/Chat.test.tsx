@@ -304,9 +304,10 @@ describe("Chat markdown rendering", () => {
     return { message, response, words: response.split(" ") };
   }
 
-  // The streaming cursor: the aria-hidden pulsing span next to the in-flight text.
-  function queryCursor(): Element | null {
-    return document.querySelector('span[aria-hidden="true"].animate-pulse');
+  // The streaming wrapper carries the `streaming-cursor` class (the cursor itself is
+  // a CSS ::after). Present means streaming is in progress; absent means finished.
+  function queryStreaming(): Element | null {
+    return document.querySelector(".streaming-cursor");
   }
 
   function getAssistantBubble(): HTMLElement {
@@ -348,7 +349,7 @@ describe("Chat markdown rendering", () => {
     // The streaming bubble is also an assistant bubble, so completion means the
     // full text is present AND the cursor has gone.
     await waitFor(() => {
-      expect(queryCursor()).toBeNull();
+      expect(queryStreaming()).toBeNull();
       expect(getAssistantBubble()).toHaveTextContent("two");
     });
 
@@ -363,10 +364,10 @@ describe("Chat markdown rendering", () => {
 
     typeAndSend("how is the candidate?");
 
-    // Cursor present and the tail of the response not yet shown, but the bold
+    // Streaming wrapper present and the tail of the response not yet shown, but the bold
     // phrase is already a real <strong>.
     await waitFor(() => {
-      expect(queryCursor()).not.toBeNull();
+      expect(queryStreaming()).not.toBeNull();
       expect(getAssistantBubble().querySelector("strong")).toHaveTextContent(
         "strong candidate"
       );
@@ -375,13 +376,32 @@ describe("Chat markdown rendering", () => {
 
     // Streaming to completion ends in the same rendered result as the completed path.
     await waitFor(() => {
-      expect(queryCursor()).toBeNull();
+      expect(queryStreaming()).toBeNull();
       expect(getAssistantBubble()).toHaveTextContent("two");
     });
     const bubble = getAssistantBubble();
     expect(bubble.querySelector("strong")).toHaveTextContent("strong candidate");
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(bubble.textContent).not.toContain("**");
+  });
+
+  it("draws the cursor via CSS, not as a separate element or text", async () => {
+    renderChatWithReply(STREAM_MD);
+
+    typeAndSend("how is the candidate?");
+
+    // jsdom cannot compute pseudo-element layout, so the inline ::after cursor
+    // itself is not verifiable here; assert only the DOM contract it relies on.
+    await waitFor(() => expect(queryStreaming()).not.toBeNull());
+    const wrapper = queryStreaming() as HTMLElement;
+    const markdown = wrapper.querySelector(".message-markdown");
+    expect(markdown).not.toBeNull();
+    expect(markdown?.nextElementSibling).toBeNull();
+    expect(wrapper.querySelector('[aria-hidden="true"], .animate-pulse')).toBeNull();
+    expect(wrapper.textContent).toBe(markdown?.textContent);
+    expect(wrapper.textContent).not.toMatch(/[|\u2588\u258C\u258D\u2502_]/);
+
+    await waitFor(() => expect(queryStreaming()).toBeNull());
   });
 
   it("renders Markdown and citation links in loader-seeded history", () => {
@@ -439,7 +459,7 @@ describe("Chat markdown rendering", () => {
 
     // Let the reply finish so nothing is left streaming after the assertions.
     await waitFor(() => {
-      expect(queryCursor()).toBeNull();
+      expect(queryStreaming()).toBeNull();
       expect(getAssistantBubble()).toHaveTextContent("two");
     });
     expect(screen.getByText(text).querySelector("strong, b, ul, li")).toBeNull();

@@ -166,6 +166,58 @@
     overflow-wrap: normal;
   }
 
+  /*
+   * Inline streaming cursor. Drawn as ::after on the LAST text-bearing block of the
+   * streaming message so it sits right after the last word (a sibling element would
+   * land on its own line below the block-level Markdown). Covers: trailing
+   * paragraph/heading, trailing blockquote paragraph, and the deepest last list item
+   * of a trailing list (up to 3 levels). In a loose list the item's text is inside a
+   * <p>, so the cursor goes on the li's last <p> and never on the li itself (it would
+   * land below the block). A trailing code block gets no cursor. The tests in
+   * Chat.cursor.test.tsx parse this selector list: keep it as one comma-separated
+   * rule directly followed by the @apply line.
+   * Decorative only: content is "" so it adds no text and is not announced.
+   */
+  .streaming-cursor {
+    --streaming-cursor-color: theme("colors.blue.500");
+  }
+
+  .dark .streaming-cursor {
+    --streaming-cursor-color: theme("colors.blue.400");
+  }
+
+  /* trailing paragraph or heading */
+  .streaming-cursor .message-markdown > :is(p, h3, h4, h5, h6):last-child::after,
+  /* trailing blockquote: its last paragraph */
+  .streaming-cursor .message-markdown > blockquote:last-child > p:last-child::after,
+  /* list depth 1: tight item (text sits directly in the li) */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child:not(:has(> :is(ul, ol, p, blockquote, .code-block):last-child))::after,
+  /* list depth 1: loose item, last paragraph */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > p:last-child::after,
+  /* list depth 1: item ending in a blockquote, its last paragraph */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > blockquote:last-child > p:last-child::after,
+  /* list depth 2: tight item (text sits directly in the li) */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child:not(:has(> :is(ul, ol, p, blockquote, .code-block):last-child))::after,
+  /* list depth 2: loose item, last paragraph */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > p:last-child::after,
+  /* list depth 2: item ending in a blockquote, its last paragraph */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > blockquote:last-child > p:last-child::after,
+  /* list depth 3: tight item (text sits directly in the li) */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child:not(:has(> :is(ul, ol, p, blockquote, .code-block):last-child))::after,
+  /* list depth 3: loose item, last paragraph */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > p:last-child::after,
+  /* list depth 3: item ending in a blockquote, its last paragraph */
+  .streaming-cursor .message-markdown > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > :is(ul, ol):last-child > li:last-child > blockquote:last-child > p:last-child::after {
+    @apply animate-pulse;
+    content: "";
+    display: inline-block;
+    width: 0.5rem;
+    height: 1rem;
+    margin-left: 0.25rem;
+    vertical-align: text-bottom;
+    background-color: var(--streaming-cursor-color);
+  }
+
   /* Mobile-specific utilities */
   @media (max-width: 768px) {
     .mobile-safe-area {
@@ -269,5 +321,12 @@
 
   .animate-card-enter {
     animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* !important: the cursor rules above have higher specificity than this selector. */
+  .streaming-cursor .message-markdown :is(p, h3, h4, h5, h6, li)::after {
+    animation: none !important;
   }
 }

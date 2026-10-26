@@ -424,9 +424,8 @@ export default function Chat({
                   <div className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
                     AI Assistant
                   </div>
-                  <div className="text-sm md:text-base leading-relaxed">
+                  <div className="streaming-cursor text-sm md:text-base leading-relaxed">
                     <MessageContent content={streamingResponse} />
-                    <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" aria-hidden="true"></span>
                   </div>
                 </div>
               </div>
