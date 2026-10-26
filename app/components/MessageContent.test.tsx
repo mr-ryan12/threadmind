@@ -270,6 +270,188 @@ describe("fences opened inside containers", () => {
   });
 });
 
+const WIN = "[Windows C:\\](https://example.com)";
+
+function expectWindowsLink(): void {
+  const link = screen.getByRole("link", { name: "Windows C:\\" });
+  expect(link).toHaveAttribute("href", "https://example.com/");
+}
+
+describe("citation labels outside and inside code", () => {
+  it("keeps link-like text in double-backtick inline code", () => {
+    const container = renderContent("Use ``[b*](https://e.com)`` here");
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.querySelector("code")?.textContent).toBe("[b*](https://e.com)");
+  });
+
+  it("supports tilde fences and links a citation after a longer closing fence", () => {
+    const container = renderContent(`~~~\n[a*](https://e.com)\n~~~~\n\n${WIN}`);
+    expect(container.querySelector("pre > code")?.textContent).toBe("[a*](https://e.com)\n");
+    expectWindowsLink();
+  });
+
+  it("does not treat an escaped bracket as a citation", () => {
+    const container = renderContent("\\[a*](https://e.com)");
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.textContent).toBe("[a*](https://e.com)");
+  });
+
+  it.each([
+    ["4 spaces", "    [a*b*](https://example.com)", "[a*b*](https://example.com)\n"],
+    ["a tab", "\t[a*b*](https://example.com)", "[a*b*](https://example.com)\n"],
+    ["6 spaces under a list item", "- item\n\n      [a*b*](https://example.com)", "[a*b*](https://example.com)\n"],
+  ])("keeps indented code unchanged (%s)", (_name, content, code) => {
+    const container = renderContent(content);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.querySelector("pre > code")?.textContent).toBe(code);
+  });
+
+  it("keeps a fence opened after a list marker followed by a tab", () => {
+    const container = renderContent(`- \t\`\`\`js\n    [a*b*](https://example.com)\n    \`\`\`\n\n${WIN}`);
+    expect(container.querySelector("pre > code")?.textContent).toBe("[a*b*](https://example.com)\n");
+    expectWindowsLink();
+  });
+
+  it.each([
+    ["- ```js\n  [a*](https://e.com)\n  ```"],
+    ["1. ~~~\n   [a*](https://e.com)\n   ~~~"],
+    ["> ~~~js\n> [a*](https://e.com)\n> ~~~"],
+    ["> - ```js\n>   [a*](https://e.com)\n>   ```"],
+    ["- > ```js\n  > [a*](https://e.com)\n  > ```"],
+    ["> > ```\n> > [a*](https://e.com)\n> > ```"],
+  ])("keeps a fence opened on a container line verbatim: %j", (block) => {
+    const container = renderContent(`${block}\n\n${WIN}`);
+    expect(container.querySelector("pre > code")?.textContent).toBe("[a*](https://e.com)\n");
+    expectWindowsLink();
+  });
+
+  it("keeps fences in list items with blank lines and later items", () => {
+    const container = renderContent("- ```\n  [a*](https://e.com)\n\n  [b*](https://e.com)\n  ```\n\n[c*](https://e.com)");
+    expect(container.querySelector("pre > code")?.textContent).toBe("[a*](https://e.com)\n\n[b*](https://e.com)\n");
+    expect(screen.getByRole("link").textContent).toBe("c*");
+  });
+
+  it("keeps an unclosed fence as code until the end", () => {
+    const container = renderContent("```\n[a*](https://e.com)");
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.querySelector("pre > code")?.textContent).toContain("[a*](https://e.com)");
+  });
+
+  it("links a citation after an unclosed list fence has ended", () => {
+    const container = renderContent(`- \`\`\`js\n  [a*](https://e.com)\n${WIN}`);
+    expect(container.querySelector("pre > code")?.textContent).toBe("[a*](https://e.com)\n");
+    expectWindowsLink();
+  });
+});
+
+describe("citation labels in prose", () => {
+  it("links an unmatched backtick paragraph pair without swallowing the citation", () => {
+    const container = renderContent(`one ` + "`" + `tick\n\n${WIN}\n\ntwo ` + "`" + `tick`);
+    expectWindowsLink();
+    expect(container.querySelector("code")).toBeNull();
+  });
+
+  it("links citations in blockquote and list prose", () => {
+    for (const prefix of ["> ", "> - ", "- "]) {
+      cleanup();
+      renderContent(`${prefix}${WIN}`);
+      expectWindowsLink();
+    }
+  });
+
+  it("keeps surrounding text of a rebuilt citation, removing backslash escapes", () => {
+    const container = renderContent("Intro \\* see [Windows C:\\](https://example.com) now.");
+    expectWindowsLink();
+    expect(container.querySelector("p")?.textContent).toBe("Intro * see Windows C:\\ now.");
+  });
+
+  it("handles several citations in one paragraph", () => {
+    const container = renderContent("[a*b*](https://x.com) and [Windows C:\\](https://y.com) and [snake_](http://z.com)");
+    const links = screen.getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual(["a*b*", "Windows C:\\", "snake_"]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["https://x.com/", "https://y.com/", "http://z.com/"]);
+    expect(container.querySelector("p")?.textContent).toBe("a*b* and Windows C:\\ and snake_");
+  });
+
+  it("keeps bold and italic text around a citation", () => {
+    const container = renderContent("**bold** [a*b*](https://x.com) *it* [Windows C:\\](https://y.com) **end**");
+    expect(container.querySelectorAll("strong")).toHaveLength(2);
+    expect(container.querySelector("em")?.textContent).toBe("it");
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+  });
+
+  it("leaves a model-authored link with a title untouched", () => {
+    const container = renderContent('[a *b*](https://x.com "Title")');
+    const link = screen.getByRole("link");
+    expect(link.querySelector("em")?.textContent).toBe("b");
+    expect(container.querySelector("a")).toBe(link);
+  });
+
+  it("leaves angle-bracket and reference links untouched", () => {
+    const container = renderContent("[a *b*](<https://x.com>) and [c *d*][r]\n\n[r]: https://y.com");
+    expect(container.querySelectorAll("em")).toHaveLength(2);
+  });
+});
+
+describe("entities next to rebuilt citations", () => {
+  it("decodes a named entity before a rebuilt citation", () => {
+    const container = renderContent("A &amp; B [Windows C:\\](https://example.com)");
+    expect(container.querySelector("p")?.textContent).toBe("A & B Windows C:\\");
+    const link = screen.getByRole("link", { name: "Windows C:\\" });
+    expect(link).toHaveAttribute("href", "https://example.com/");
+  });
+
+  it("decodes a numeric entity before a rebuilt citation", () => {
+    const container = renderContent("&#169; [Windows C:\\](https://example.com)");
+    expect(container.querySelector("p")?.textContent).toBe("\u00a9 Windows C:\\");
+    expect(screen.getByRole("link", { name: "Windows C:\\" })).toBeInTheDocument();
+  });
+
+  it("decodes entities on both sides of a rebuilt citation", () => {
+    const container = renderContent("A &amp; B [Windows C:\\](https://example.com) &lt;x&gt; &#169;");
+    expect(container.querySelector("p")?.textContent).toBe("A & B Windows C:\\ <x> \u00a9");
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+  });
+
+  it("decodes entities between several rebuilt citations", () => {
+    const container = renderContent(
+      "[Windows C:\\](https://a.com) &amp; [Drive D:\\](https://b.com) &#169; [Path E:\\](https://c.com)",
+    );
+    expect(container.querySelector("p")?.textContent).toBe("Windows C:\\ & Drive D:\\ \u00a9 Path E:\\");
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Windows C:\\",
+      "Drive D:\\",
+      "Path E:\\",
+    ]);
+  });
+
+  it("decodes entities in blockquote and list prose without container prefixes", () => {
+    const container = renderContent(
+      "> A &amp; B [Windows C:\\](https://example.com)\n> more &lt;text&gt;\n\n- C &amp; D [Drive D:\\](https://e.com)\n  tail &#169;",
+    );
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Windows C:\\", "Drive D:\\"]);
+    expect(container.querySelector("blockquote")?.textContent).toContain("A & B Windows C:\\\nmore <text>");
+    expect(container.querySelector("blockquote")?.textContent).not.toContain(">  ");
+    expect(container.querySelector("li")?.textContent).toContain("C & D Drive D:\\\ntail \u00a9");
+  });
+
+  it("leaves a node untouched when escaped and real citation counts differ", () => {
+    const container = renderContent("\\[x](https://e.com) and [Windows C:\\](https://example.com)");
+    // Raw matches (1) and decoded matches (2) differ, so the text is kept as parsed:
+    // nothing is corrupted and the backslash-broken citation is not linked.
+    expect(container.querySelector("p")?.textContent).toBe("[x](https://e.com) and [Windows C:](https://example.com)");
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  // Known limitation, not desired behavior: the parser splits this label across
+  // sibling nodes and only a single text node is repaired. Pinned so a change is noticed.
+  it("keeps the text of a split-label citation visible without a link", () => {
+    const container = renderContent("[a*b* C:\\](https://example.com)");
+    expect(container.querySelector("p")?.textContent).toBe("[ab C:](https://example.com)");
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+});
+
 describe("unfinished markdown", () => {
   it.each([
     ["**bold", ["bold"]],

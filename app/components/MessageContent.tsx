@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 
 // Utils
 import { getCodeBlockInfo } from "~/utils/codeBlock";
-import { escapeCitationLabels, rehypeStripStructuralWhitespace } from "~/utils/markdown";
+import { rehypeStripStructuralWhitespace, remarkLiteralCitationLabels } from "~/utils/markdown";
 
 // Components
 import CodeBlock from "./CodeBlock";
@@ -77,10 +77,11 @@ export default function MessageContent({ content }: MessageContentProps): JSX.El
     <div className="message-markdown">
       <ReactMarkdown
         urlTransform={toSafeUrl}
+        remarkPlugins={[remarkLiteralCitationLabels]}
         rehypePlugins={[rehypeStripStructuralWhitespace]}
         components={components}
       >
-        {escapeCitationLabels(content)}
+        {content}
       </ReactMarkdown>
     </div>
   );

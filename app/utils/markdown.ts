@@ -1,10 +1,7 @@
 // Types
 import type { Element, ElementContent, Root, RootContent } from "hast";
-
-const CITATION_LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/y;
-const FENCE_OPEN = /^(`{3,}|~{3,})/;
-const LIST_MARKER = /^([-*+]|\d{1,9}[.)])( +|$)/;
-const LABEL_SPECIAL_CHARS = /[\\*_`[\]<&]/g;
+import type { Link, Root as MdastRoot, Content as MdastContent, Text } from "mdast";
+import type { VFile } from "vfile";
 
 const BLOCK_ELEMENTS = new Set([
   "p", "ul", "ol", "li", "blockquote", "pre", "hr",
@@ -12,215 +9,106 @@ const BLOCK_ELEMENTS = new Set([
 ]);
 const VERBATIM_ELEMENTS = new Set(["pre", "code"]);
 
-function escapeLabel(label: string): string {
-  return label.replace(LABEL_SPECIAL_CHARS, (char) => `\\${char}`);
+// Legacy citation shape written by formatResponseText: `[label](http(s)-url)`.
+const LEGACY_CITATION_SOURCE = "\\[([^\\]\\n]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)";
+const LEGACY_CITATION_EXACT = new RegExp(`^${LEGACY_CITATION_SOURCE}$`);
+const HTTP_URL = /^https?:\/\//;
+
+type TMdastParent = Extract<MdastContent | MdastRoot, { children: MdastContent[] }>;
+
+function sliceSource(node: MdastContent, source: string): string | null {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  if (start === undefined || end === undefined || end < start) return null;
+  return source.slice(start, end);
 }
 
-// Index just past the backtick run starting at `start`, plus a matching closing
-// run of the same length, or -1 when the span is never closed.
-function findCodeSpanEnd(text: string, start: number, runLength: number): number {
-  let cursor = start + runLength;
-  while (cursor < text.length) {
-    if (text[cursor] !== "`") {
-      cursor++;
-      continue;
-    }
-    let end = cursor;
-    while (text[end] === "`") end++;
-    if (end - cursor === runLength) return end;
-    cursor = end;
-  }
-  return -1;
+function createLiteralLink(url: string, label: string): Link {
+  return { type: "link", url, children: [{ type: "text", value: label }] };
 }
 
-function escapeLabelsOutsideFences(text: string): string {
-  let output = "";
-  let index = 0;
-  while (index < text.length) {
-    const char = text[index];
-    if (char === "\\") {
-      output += text.slice(index, index + 2);
-      index += 2;
-    } else if (char === "[") {
-      CITATION_LINK.lastIndex = index;
-      const match = CITATION_LINK.exec(text);
-      if (match) {
-        output += `[${escapeLabel(match[1])}](${match[2]})`;
-        index += match[0].length;
-      } else {
-        output += char;
-        index++;
-      }
-    } else if (char === "`") {
-      let runEnd = index;
-      while (text[runEnd] === "`") runEnd++;
-      const spanEnd = findCodeSpanEnd(text, index, runEnd - index);
-      const copyEnd = spanEnd === -1 ? runEnd : spanEnd;
-      output += text.slice(index, copyEnd);
-      index = copyEnd;
+function isEscapedAt(raw: string, index: number): boolean {
+  let backslashes = 0;
+  while (raw[index - 1 - backslashes] === "\\") backslashes++;
+  return backslashes % 2 === 1;
+}
+
+function findLegacyMatches(text: string, skipEscaped: boolean): RegExpMatchArray[] {
+  const matches = Array.from(text.matchAll(new RegExp(LEGACY_CITATION_SOURCE, "g")));
+  return skipEscaped ? matches.filter((match) => !isEscapedAt(text, match.index ?? 0)) : matches;
+}
+
+// Rebuilds a text node that holds legacy citations the parser did not link (for
+// example a label ending in a backslash, where `\]` escapes the bracket). Returns
+// null when the node has no citation, so it stays untouched.
+//
+// The surrounding prose comes from the node's decoded `value` (entities, escapes
+// and container prefixes already resolved by the parser); the raw source slice
+// only supplies the literal label and url. Matches are found in both and paired
+// by order. If the counts or any url differ, the node is left untouched.
+//
+// Known limitation: a label that is split across sibling nodes, such as
+// `[a*b* C:\](https://example.com)` (text `[a`, emphasis, text ` C:](...)`), is
+// not repaired because only a single text node is rewritten. It renders as the
+// plain text `[ab C:](https://example.com)`: no link, and the asterisks and
+// backslash are consumed. This needs a label that ends in a backslash AND has
+// formatting characters, so it is accepted as rare. Likewise, a citation whose
+// url contains formatting (for example `*x*`) spans several nodes and is skipped.
+function rebuildTextNode(node: Text, source: string): MdastContent[] | null {
+  const raw = sliceSource(node, source);
+  if (raw === null) return null;
+  const rawMatches = findLegacyMatches(raw, true);
+  if (rawMatches.length === 0) return null;
+  const valueMatches = findLegacyMatches(node.value, false);
+  if (valueMatches.length !== rawMatches.length) return null;
+  if (valueMatches.some((match, i) => match[2] !== rawMatches[i][2])) return null;
+  const parts: MdastContent[] = [];
+  let cursor = 0;
+  const pushText = (segment: string): void => {
+    if (segment !== "") parts.push({ type: "text", value: segment });
+  };
+  valueMatches.forEach((match, i) => {
+    const index = match.index ?? 0;
+    pushText(node.value.slice(cursor, index));
+    parts.push(createLiteralLink(rawMatches[i][2], rawMatches[i][1]));
+    cursor = index + match[0].length;
+  });
+  pushText(node.value.slice(cursor));
+  return parts;
+}
+
+function rewriteCitations(parent: TMdastParent, source: string): void {
+  const rewritten: MdastContent[] = [];
+  for (const child of parent.children) {
+    if (child.type === "link") {
+      const raw = sliceSource(child, source);
+      const match = raw === null ? null : LEGACY_CITATION_EXACT.exec(raw);
+      if (match && HTTP_URL.test(child.url)) child.children = [{ type: "text", value: match[1] }];
+      rewritten.push(child);
+    } else if (child.type === "text") {
+      rewritten.push(...(rebuildTextNode(child, source) ?? [child]));
     } else {
-      output += char;
-      index++;
+      if ("children" in child) rewriteCitations(child as TMdastParent, source);
+      rewritten.push(child);
     }
   }
-  return output;
-}
-
-interface IFence {
-  marker: string;
-  length: number;
-}
-
-// An open container: a blockquote, or a list item with its content offset
-// (columns of indentation its continuation lines need, relative to the parent).
-type TContainer = { kind: "quote" } | { kind: "list"; offset: number };
-
-// Leading indentation in columns (tabs advance to the next multiple of 4).
-function measureIndent(line: string): { indent: number; rest: string } {
-  let indent = 0;
-  let position = 0;
-  while (position < line.length) {
-    if (line[position] === " ") indent++;
-    else if (line[position] === "\t") indent += 4 - (indent % 4);
-    else break;
-    position++;
-  }
-  return { indent, rest: line.slice(position) };
-}
-
-// Removes up to `columns` columns of leading whitespace.
-function dropColumns(line: string, columns: number): string {
-  let consumed = 0;
-  let position = 0;
-  while (position < line.length && consumed < columns) {
-    if (line[position] === " ") consumed++;
-    else if (line[position] === "\t") consumed += 4 - (consumed % 4);
-    else break;
-    position++;
-  }
-  return line.slice(position);
-}
-
-// Content offset of a list item whose marker starts at `indent`, or null when
-// the line is not a list item. Per CommonMark, 5+ spaces after the marker (or
-// nothing after it) mean the content offset is marker width + 1.
-function listContentOffset(indent: number, rest: string): number | null {
-  const match = LIST_MARKER.exec(rest);
-  if (!match) return null;
-  const markerWidth = match[1].length;
-  const gap = match[2].length;
-  const isBlankItem = rest.trim().length === markerWidth;
-  return indent + markerWidth + (isBlankItem || gap > 4 ? 1 : gap);
-}
-
-// Text after a `>` marker (one optional space belongs to the marker).
-function afterQuoteMarker(rest: string): string {
-  const content = rest.slice(1);
-  return content[0] === " " ? content.slice(1) : content;
-}
-
-// Consumes the prefixes of the open containers. Returns how many continue on
-// this line and the remainder of the line after their prefixes.
-function matchContainers(body: string, containers: TContainer[]): { matched: number; remainder: string } {
-  let remainder = body;
-  let matched = 0;
-  for (const container of containers) {
-    const { indent, rest } = measureIndent(remainder);
-    if (container.kind === "quote") {
-      if (indent > 3 || rest[0] !== ">") break;
-      remainder = afterQuoteMarker(rest);
-    } else if (rest === "") {
-      remainder = "";
-    } else if (indent >= container.offset) {
-      remainder = dropColumns(remainder, container.offset);
-    } else {
-      break;
-    }
-    matched++;
-  }
-  return { matched, remainder };
-}
-
-function openFence(rest: string): IFence | null {
-  const opening = FENCE_OPEN.exec(rest);
-  if (!opening) return null;
-  if (opening[1][0] === "`" && rest.slice(opening[1].length).includes("`")) return null;
-  return { marker: opening[1][0], length: opening[1].length };
-}
-
-function closesFence(fence: IFence, remainder: string): boolean {
-  const { indent, rest } = measureIndent(remainder);
-  return indent <= 3 && new RegExp(`^${fence.marker}{${fence.length},}\\s*$`).test(rest);
+  parent.children = rewritten;
 }
 
 // Persisted citations are written as `[label](url)` with the label verbatim, so
-// labels such as `C:\` or `a*b*` would be misread as Markdown. Escape every label
-// of that legacy shape so it renders literally and the link stays clickable.
-// Fenced code blocks and inline code spans are left untouched.
-//
-// Containers follow CommonMark: list items (content offset) and blockquotes
-// (`>` with up to 3 spaces of indent and one optional space after it, nestable).
-// Each line first consumes the prefixes of the open containers; a non-blank line
-// that cannot continue one ends it and everything nested in it, and an unclosed
-// fence ends with its container. The remainder is then judged for a fence
-// (0-3 spaces of relative indentation) and for new container markers, whose
-// own remainder may open a fence (`- ```js`, `> ~~~js`, `> - ```js`).
-// Known limitation: lazy continuation lines (`> text` followed by an unprefixed
-// paragraph line) end the blockquote instead of continuing it.
-export function escapeCitationLabels(content: string): string {
-  const lines = content.split(/(?<=\n)/);
-  let containers: TContainer[] = [];
-  let output = "";
-  let prose = "";
-  let fence: IFence | null = null;
-
-  const flushProse = (): void => {
-    output += escapeLabelsOutsideFences(prose);
-    prose = "";
+// labels such as `C:\` or `a*b*` would be misread as Markdown. After parsing, show
+// the raw source label literally and keep the link clickable. Only link and text
+// nodes are touched, so code (fenced, indented, inline) and HTML stay exactly as
+// written. Links with titles, angle-bracket or non-http(s) destinations and
+// reference links are not legacy-shaped and are left alone.
+export function remarkLiteralCitationLabels(): (tree: MdastRoot, file: VFile) => void {
+  return (tree: MdastRoot, file: VFile): void => {
+    try {
+      rewriteCitations(tree, String(file.value));
+    } catch {
+      // Never fail rendering over a cosmetic normalization.
+    }
   };
-
-  for (const line of lines) {
-    const body = line.replace(/\r?\n$/, "");
-    const { matched, remainder } = matchContainers(body, containers);
-    const isContinuing = matched === containers.length;
-
-    if (fence && isContinuing) {
-      output += line;
-      if (closesFence(fence, remainder)) fence = null;
-      continue;
-    }
-    fence = null;
-    containers = containers.slice(0, matched);
-
-    let current = remainder;
-    let opened: IFence | null = null;
-    for (;;) {
-      const { indent, rest } = measureIndent(current);
-      if (indent > 3 || rest === "") break;
-      if (rest[0] === ">") {
-        containers.push({ kind: "quote" });
-        current = afterQuoteMarker(rest);
-        continue;
-      }
-      opened = openFence(rest);
-      if (opened) break;
-      const offset = listContentOffset(indent, rest);
-      if (offset === null) break;
-      containers.push({ kind: "list", offset });
-      const markerWidth = (LIST_MARKER.exec(rest) ?? ["", ""])[1].length;
-      current = dropColumns(rest.slice(markerWidth), offset - indent - markerWidth);
-    }
-
-    if (opened) {
-      flushProse();
-      output += line;
-      fence = opened;
-    } else {
-      prose += line;
-    }
-  }
-  flushProse();
-  return output;
 }
 
 function isBlockElement(node: ElementContent | RootContent | undefined): boolean {
