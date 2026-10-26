@@ -19,7 +19,7 @@ interface MessageContentProps {
 type TShiftedHeading = "h3" | "h4" | "h5" | "h6";
 
 const LINK_CLASS_NAME =
-  "text-blue-600 dark:text-blue-300 underline break-words rounded focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-200";
+  "text-blue-600 dark:text-blue-300 underline break-words rounded focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-blue-300 transition-colors duration-200";
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 // Only absolute http(s) and mailto URLs may become active links.
